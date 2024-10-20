@@ -17,33 +17,36 @@ async fn handle_incoming_messages(mut read: SplitStream<WebSocketStream<impl Asy
     }
 }
 
+async fn read_and_send_messages(mut write: SplitSink<WebSocketStream<impl AsyncRead + AsyncWrite + Unpin>, Message>) {
+    let mut reader = io::BufReader::new(io::stdin()).lines();
+    while let Some(line) = reader.next_line().await.expect("Failed to read line") {
+        if !line.trim().is_empty() {
+            write.send(Message::Text(line)).await.expect("Failed to send message");
+        }
+    }
+}
+
 #[tokio::main]
 async  fn main() {
     let url = "wss://echo.websocket.events";
     // let url = "ws://localhost:3000";
 
-    println!("Connecting to - {}",url);
-    let (ws_stream, _) = connect_async(url).await.expect("Failed to connecting");
+    println!("Connecting to - {}", url);
+    let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
     println!("Connected to Agent Network");
 
     let (mut write, mut read) = ws_stream.split();
 
     // register the timebot
-    register_bot(&mut write, "RustTimeBot").await;
-    // let bot_name = "RustTimeBot";
-    // let msg = Message::Text(format!("register as {}", bot_name).into());
-    // println!("sending message: {}", msg);
-    // write.send(msg).await.expect("Failed to send message");
+    register_bot(&mut write, "RustClient").await;
 
-    let msg = Message::Text("who's connected?".into());
-    println!("sending message: {}", msg);
-    write.send(msg).await.expect("Failed to send message");
-
+    // Handle incoming messages in a separate task
     let read_handle = tokio::spawn(handle_incoming_messages(read));
-    // 19:12
-    // if let Some(message) = read.next().await{
-    //     let message = message.expect("Failed to read the message");
-    //     println!("Received a message: {}", message);
-    // }
-    let _ = tokio::try_join!(read_handle);
+
+    // Read from command line and send messages
+    let write_handle = tokio::spawn(read_and_send_messages(write));
+
+    // Await both tasks (optional, depending on your use case)
+    let _ = tokio::try_join!(read_handle, write_handle);
+
 }
